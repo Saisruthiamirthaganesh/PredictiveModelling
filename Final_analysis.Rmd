@@ -1,0 +1,132 @@
+## Analysis
+
+### Study
+
+Assuming that the biomarkers and demographic data can be used to predict incidence of a certain disorder in the current scenario, the analysis was carried out and classifier was built.
+
+### Loading data into session
+
+```{r message=FALSE, warning=FALSE}
+library(e1071)
+library(caret)
+library(dplyr)
+library(MVN)
+library(mvShapiroTest)
+```
+
+```{r message=FALSE, warning=FALSE}
+mydata <- read.csv("analysis_test_ready.txt", sep = '\t')
+mydata <- na.omit(mydata)
+rownames(mydata) <- mydata[,1]
+mydata <- mydata[,-1]
+mydata$variable2[mydata$variable2 == "Female"] <- 0
+mydata$variable2[mydata$variable2 == "Male"] <- 1
+```
+
+### Check for Normality across variables
+
+Removal of Categorical variables to perform normality test
+
+Overall Normality test
+
+```{r}
+set.seed(1234)
+quant <- mydata[-c(2,4,5:45)]
+dataset <- data.matrix(quant)
+mvShapiro.Test(dataset)
+```
+
+Per Variable Normality test
+
+```{r message=FALSE, warning=FALSE}
+mvn(dataset, mvnTest = "mardia")
+```
+
+#### Interpretation of Normality
+
+Based on the results of the Multivariate Normality test according to the Shapiro-Wilk statistic, it is evident that the p-value is significantly lower than the cutoff of 0.05, this could lead to the assumption that the data as a whole might significantly deviate from a normal distribution.
+
+While taking a deeper look at the distribution of data of each variable based on the Anderson-Darling test, it can be said that the data of variables 1, 4, 59, 62, 64, 79, 81, 127 deviate from a normal distribution. 
+
+#### Detection of Outliers
+
+```{r message=FALSE, warning=FALSE}
+res <- mvn(dataset, mvnTest = "hz", multivariateOutlierMethod = "quan")
+```
+
+Interpretation
+
+Based on the Mahalanobis distance plot, around 164 samples display multivariate outlier tendencies.
+
+### Correlation of variables to Outcome 1
+
+```{r message=FALSE, warning=FALSE}
+outcome1_test <- mydata[,-41] #Remove outcome2
+test1 <- data.matrix(outcome1_test)
+correlation1 <- cor(test1)
+significant_variables_o1 <- as.data.frame(apply(correlation1, 2, function(x) ifelse (abs(x) >=0.5,x,"NA")))
+df1 <- as.data.frame(significant_variables_o1)
+corr_outcome1 <- df1['outcome1']
+corr_outcome1$outcome1 <- as.numeric(corr_outcome1$outcome1)
+na.omit(corr_outcome1)
+```
+
+Based on a pearson correlation significance threshold of 0.5, variables 6 and 9 are positively associated with outcome 1 while variable 43 is negatively correlated with outcome1.
+
+### Correlation of variables to Outcome 2
+
+```{r message=FALSE, warning=FALSE}
+outcome2_test <- mydata[,-4] #Remove outcome1
+test2 <- data.matrix(outcome2_test)
+correlation2 <- cor(test2)
+significant_variables_o2 <- as.data.frame(apply(correlation2, 2, function(x) ifelse (abs(x) >=0.25,x,"NA")))
+df2 <- as.data.frame(significant_variables_o2)
+corr_outcome2 <- df2['outcome2']
+corr_outcome2$outcome2 <- as.numeric(corr_outcome2$outcome2)
+na.omit(corr_outcome2)
+```
+
+A pearson correlation threshold of 0.25 was set as the correlation values were on the lower end, overall. Variables 1, 64, 67, 99 and 112 exhibit positive correlation with outcome2 while variable 43 has a negative association with outcome2.
+
+### Choice of preditive model for the current study
+
+A classification Support Vector Machine was selected as the most informative predictive model to utilize the variables/biomarkers supplied as part of this dataset to estimate outcomes. SVMs offer high predictive accuracy, ability to handle multi-dimensional data at a comparatively lower computational cost, robustness to noise by mitigating the impact of irrelevant biomarkers as well as advanced feature selection capacity. 
+
+### Predictive Model for target feature Outcome 1
+
+```{r message=FALSE, warning=FALSE}
+set.seed(1234)
+intrain <- createDataPartition(y = outcome1_test$outcome1, p= 0.7, list = FALSE)
+training <- outcome1_test[intrain,]
+testing <- outcome1_test[-intrain,]
+dim(training)
+dim(testing)
+training[["outcome1"]] = factor(training[["outcome1"]])
+trctrl <- trainControl(method = "repeatedcv", number = 20, repeats = 3)
+svm_Linear <- train(outcome1 ~., data = training, method = "svmLinear2",trControl=trctrl,preProcess = c("center", "scale"),tuneLength = 10)
+test_pred <- predict(svm_Linear, newdata = testing)
+test_pred
+confusionMatrix(table(test_pred, testing$outcome1))
+```
+
+### Predictive Model for target feature Outcome 2
+
+```{r message=FALSE, warning=FALSE}
+set.seed(1234)
+intrain <- createDataPartition(y = outcome2_test$outcome2, p= 0.7, list = FALSE)
+training <- outcome2_test[intrain,]
+testing <- outcome2_test[-intrain,]
+dim(training);
+dim(testing);
+training[["outcome2"]] = factor(training[["outcome2"]])
+trctrl <- trainControl(method = "repeatedcv", number = 20, repeats = 3)
+svm_Linear <- train(outcome2 ~., data = training, method = "svmLinear2",trControl=trctrl,preProcess = c("center", "scale"),tuneLength = 10)
+test_pred <- predict(svm_Linear, newdata = testing)
+test_pred
+confusionMatrix(table(test_pred, testing$outcome2))
+```
+
+## Conclusion
+
+The classifier predicts (refer to test_pred values for outcome predictions) outcomes 1 & 2 for the different subjects based on the biomarker data provided. The accuracy of prediction by the classifier for outcome1 as the target variable is ~83% and the accuracy for the target variable outcome2 is ~80%. The performance of the classifier can be further improved by tuning parameters such as the method, cost, degree, scale, number of resampling iterations. Other ways to improve model performance would be to utilize feature selection, increasing the sample size thereby consequently increasing the training set, employing ensemble methods.
+
